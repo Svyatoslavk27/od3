@@ -1,0 +1,238 @@
+#Завдання 1
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.cluster import KMeans, DBSCAN
+from sklearn.metrics import silhouette_score
+from mpl_toolkits.mplot3d import Axes3D
+
+# --- ГЕНЕРАЦІЯ ДАНИХ ---
+np.random.seed(42)
+n_samples = 100
+# Центри кластерів згідно з методичкою [cite: 22-25]
+centers = np.array([
+    [0, 0, 0],
+    [1, 1, 0],
+    [0, 1, 1],
+    [-1, 0, -1],
+    [0, -1, 0]
+])
+
+X = []
+labels_true = []
+# Генеруємо дані навколо центрів з невеликим шумом (нормальний розподіл)
+for i, center in enumerate(centers):
+    # Використовуємо одиничну коваріацію, оскільки матриця в Task 1 (source 26) погано розпізнана
+    cluster_data = np.random.multivariate_normal(center, np.eye(3) * 0.15, n_samples)
+    X.append(cluster_data)
+    labels_true.extend([i] * n_samples)
+
+X = np.vstack(X)
+
+# --- КЛАСТЕРИЗАЦІЯ ---
+# K-Means для k=3, 4, 5 [cite: 27]
+kmeans_results = {}
+sse = {} # Sum of Squared Errors (сума квадратів відстаней)
+
+for k in [3, 4, 5]:
+    km = KMeans(n_clusters=k, random_state=42, n_init=10)
+    km.fit(X)
+    kmeans_results[k] = km.labels_
+    sse[k] = km.inertia_ # Це і є критерій суми квадратів відстаней [cite: 29]
+
+# DBSCAN [cite: 27]
+dbscan = DBSCAN(eps=0.4, min_samples=5)
+dbscan_labels = dbscan.fit_predict(X)
+
+# --- ВІЗУАЛІЗАЦІЯ ---
+fig = plt.figure(figsize=(18, 10))
+
+# Plot True Data
+ax = fig.add_subplot(2, 3, 1, projection='3d')
+ax.scatter(X[:, 0], X[:, 1], X[:, 2], c=labels_true, cmap='tab10', s=10)
+ax.set_title("Справжні кластери")
+
+# Plot K-Means
+plot_idx = 2
+for k in [3, 4, 5]:
+    ax = fig.add_subplot(2, 3, plot_idx, projection='3d')
+    ax.scatter(X[:, 0], X[:, 1], X[:, 2], c=kmeans_results[k], cmap='viridis', s=10)
+    ax.set_title(f"K-Means (k={k})\nSSE: {sse[k]:.2f}")
+    plot_idx += 1
+
+# Plot DBSCAN
+ax = fig.add_subplot(2, 3, 5, projection='3d')
+# DBSCAN noise points are -1
+colors = ['red' if x == -1 else 'blue' for x in dbscan_labels] # Simplified coloring
+ax.scatter(X[:, 0], X[:, 1], X[:, 2], c=dbscan_labels, cmap='plasma', s=10)
+ax.set_title(f"DBSCAN\nClusters found: {len(set(dbscan_labels)) - (1 if -1 in dbscan_labels else 0)}")
+
+plt.tight_layout()
+plt.show()
+
+print("Сума квадратів відстаней до центрів (Inertia) для K-Means:")
+for k, v in sse.items():
+    print(f"k={k}: {v:.4f}")
+
+#Завдання 2
+import numpy as np               # <--- Ось цей рядок виправляє помилку
+import matplotlib.pyplot as plt
+from sklearn.cluster import KMeans, DBSCAN
+from sklearn.decomposition import PCA
+
+# --- ПАРАМЕТРИ ---
+n_samples = 100  # Кількість точок на кластер
+
+# Матриця кореляції з таблиці
+cov_matrix = np.array([
+    [1.0, 0.8, 0.6, 0.4, 0.2],
+    [0.8, 1.0, 0.9, 0.6, 0.3],
+    [0.6, 0.9, 1.0, 0.7, 0.4],
+    [0.4, 0.6, 0.7, 1.0, 0.5],
+    [0.2, 0.3, 0.4, 0.5, 1.0]
+])
+
+# !!! ВАЖЛИВО: Виправлення для генерації даних !!!
+# Додаємо маленьке значення до діагоналі (0.05), щоб матриця стала
+# позитивно визначеною. Без цього numpy видасть помилку LinAlgError.
+cov_matrix = cov_matrix + np.eye(5) * 0.05 
+
+# Центри (доповнені до 5D, оскільки матриця 5x5)
+centers_5d = np.array([
+    [0, 0, 0, 0, 0],
+    [1, 1, 0, 0, 0],
+    [0, 1, 1, 0, 0],
+    [-1, 0, -1, 0, 0],
+    [0, -1, 0, 0, 0]
+])
+
+# --- ГЕНЕРАЦІЯ ДАНИХ (5D) ---
+X_5d = []
+for center in centers_5d:
+    # Множимо матрицю на 0.2, щоб зменшити розкид точок
+    cluster_data = np.random.multivariate_normal(center, cov_matrix * 0.2, n_samples)
+    X_5d.append(cluster_data)
+
+X_5d = np.vstack(X_5d)
+
+# --- КЛАСТЕРИЗАЦІЯ ---
+kmeans_res_2 = {}
+sse_2 = {}
+
+# K-Means
+for k in [3, 4, 5]:
+    km = KMeans(n_clusters=k, random_state=42, n_init=10)
+    labels = km.fit_predict(X_5d)
+    kmeans_res_2[k] = labels
+    sse_2[k] = km.inertia_
+
+# DBSCAN
+# eps=1.2 підібрано експериментально для 5D простору
+dbscan_2 = DBSCAN(eps=1.2, min_samples=5) 
+dbscan_labels_2 = dbscan_2.fit_predict(X_5d)
+
+# --- ВІЗУАЛІЗАЦІЯ (PCA до 2D) ---
+# Проектуємо 5D дані на 2D площину, щоб побачити графік
+pca = PCA(n_components=2)
+X_pca = pca.fit_transform(X_5d)
+
+fig, axes = plt.subplots(1, 4, figsize=(20, 5))
+
+# Графіки K-Means
+for i, k in enumerate([3, 4, 5]):
+    axes[i].scatter(X_pca[:, 0], X_pca[:, 1], c=kmeans_res_2[k], cmap='viridis', s=10)
+    axes[i].set_title(f"Task 2: K-Means (k={k})\nSSE: {sse_2[k]:.1f}")
+    axes[i].set_xlabel("PCA 1")
+    axes[i].set_ylabel("PCA 2")
+
+# Графік DBSCAN
+axes[3].scatter(X_pca[:, 0], X_pca[:, 1], c=dbscan_labels_2, cmap='plasma', s=10)
+axes[3].set_title(f"Task 2: DBSCAN")
+axes[3].set_xlabel("PCA 1")
+
+plt.tight_layout()
+plt.show()
+
+print("Завдання 2 виконано успішно.")
+
+#Завдання 3
+# 1. ІМПОРТ БІБЛІОТЕК (Щоб уникнути NameError)
+
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
+
+# 2. ГЕНЕРАЦІЯ ДАНИХ
+
+# Генеруємо 500 випадкових точок у квадраті [0,1] x [0,1]
+np.random.seed(42) # Для відтворюваності результату
+n_points = 500
+X = np.random.rand(n_points, 2) 
+
+# Визначаємо класи: 
+# Клас 1 (жовтий), якщо y > x (точка над діагоналлю)
+# Клас 0 (синій), якщо y <= x (точка під діагоналлю)
+y = (X[:, 1] > X[:, 0]).astype(int) 
+
+# Розбиваємо на навчальну (70%) та тестову (30%) вибірки
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+
+# 3. НАВЧАННЯ МОДЕЛІ
+
+model = LogisticRegression()
+model.fit(X_train, y_train)
+y_pred = model.predict(X_test)
+
+# 4. РОЗРАХУНОК МЕТРИК
+
+print("--- Результати класифікації ---")
+print(f"Accuracy (Точність):  {accuracy_score(y_test, y_pred):.4f}")
+print(f"Precision (Влучність): {precision_score(y_test, y_pred):.4f}")
+print(f"Recall (Повнота):     {recall_score(y_test, y_pred):.4f}")
+print(f"F1-Score:             {f1_score(y_test, y_pred):.4f}")
+
+# 5. ВІЗУАЛІЗАЦІЯ
+fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+
+# --- Графік 1: Точки та Лінія розділення ---
+# Малюємо точки тестової вибірки
+axes[0].scatter(X_test[y_test==0, 0], X_test[y_test==0, 1], color='blue', label='Клас 0 (y < x)', alpha=0.6)
+axes[0].scatter(X_test[y_test==1, 0], X_test[y_test==1, 1], color='orange', label='Клас 1 (y > x)', alpha=0.6)
+
+# Малюємо лінію, яку побудувала модель: w1*x + w2*y + b = 0 -> y = -(w1*x + b)/w2
+w1, w2 = model.coef_[0]
+b = model.intercept_[0]
+x_vals = np.array([0, 1])
+y_vals = -(w1 * x_vals + b) / w2
+
+axes[0].plot(x_vals, y_vals, 'r--', linewidth=2, label='Лінія регресії')
+axes[0].set_title("Лінійна роздільність")
+axes[0].legend()
+axes[0].set_xlim(0, 1)
+axes[0].set_ylim(0, 1)
+
+# --- Графік 2: Теплова карта ймовірностей ---
+# Створюємо сітку точок для зафарбовування фону
+xx, yy = np.meshgrid(np.linspace(0, 1, 100), np.linspace(0, 1, 100))
+grid_points = np.c_[xx.ravel(), yy.ravel()]
+# Прогнозуємо ймовірність для кожної точки сітки
+probs = model.predict_proba(grid_points)[:, 1].reshape(xx.shape)
+
+contour = axes[1].contourf(xx, yy, probs, levels=20, cmap='coolwarm', alpha=0.7)
+axes[1].scatter(X_test[:, 0], X_test[:, 1], c=y_test, edgecolors='white', cmap='coolwarm')
+axes[1].set_title("Ймовірність класу 1 (Heatmap)")
+fig.colorbar(contour, ax=axes[1])
+
+# --- Графік 3: Матриця плутанини ---
+cm = confusion_matrix(y_test, y_pred)
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=axes[2])
+axes[2].set_title("Матриця плутанини (Confusion Matrix)")
+axes[2].set_xlabel("Передбачено")
+axes[2].set_ylabel("Фактично")
+
+plt.tight_layout()
+plt.show()
+
+print("Завдання 3 виконано успішно.")
